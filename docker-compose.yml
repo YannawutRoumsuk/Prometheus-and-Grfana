@@ -1,0 +1,92 @@
+version: '3.7'
+
+services:
+
+  # บริการ MySQL
+  mysql:
+    image: mysql:latest  # ใช้ภาพ MySQL เวอร์ชันล่าสุด
+    container_name: mysql  # ตั้งชื่อคอนเทนเนอร์เป็น mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword  # กำหนดรหัสผ่านสำหรับ root
+      MYSQL_DATABASE: python_api  # สร้างฐานข้อมูลชื่อ python_api
+    volumes:
+      - mysql-data:/var/lib/mysql  # เก็บข้อมูลใน volume ชื่อ mysql-data
+    ports:
+      - "3306:3306"  # เปิดพอร์ต 3306
+    restart: always  # รีสตาร์ทคอนเทนเนอร์อัตโนมัติเมื่อเกิดข้อผิดพลาด
+
+  # บริการ MySQL Exporter สำหรับ Prometheus
+  mysqld-exporter:
+    image: prom/mysqld-exporter:latest  # ใช้ภาพ mysqld-exporter เวอร์ชันล่าสุด
+    container_name: mysqld-exporter  # ตั้งชื่อคอนเทนเนอร์เป็น mysqld-exporter
+    environment:
+      DATA_SOURCE_NAME: root:rootpassword@tcp(mysql:3306)/  # กำหนดข้อมูลการเชื่อมต่อ MySQL
+      MYSQLD_EXPORTER_EXPORTER_DISABLE: "slave_status"  # ปิดการส่งข้อมูล slave status
+    command: 
+      - --config.my-cnf=/etc/mysql/my.cnf  # ใช้ไฟล์ my.cnf เป็นการตั้งค่า
+    ports:
+      - "9104:9104"  # เปิดพอร์ต 9104
+    depends_on:
+      - mysql  # ขึ้นอยู่กับบริการ mysql
+    volumes:
+      - ./my.cnf:/etc/mysql/my.cnf  # ใช้ไฟล์ my.cnf จากโฟลเดอร์ปัจจุบัน
+    restart: always  # รีสตาร์ทคอนเทนเนอร์อัตโนมัติเมื่อเกิดข้อผิดพลาด
+
+  # บริการ phpMyAdmin
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest  # ใช้ภาพ phpMyAdmin เวอร์ชันล่าสุด
+    container_name: phpmyadmin  # ตั้งชื่อคอนเทนเนอร์เป็น phpmyadmin
+    environment:
+      PMA_HOST: mysql  # กำหนด host เป็น mysql
+      MYSQL_ROOT_PASSWORD: rootpassword  # กำหนดรหัสผ่านสำหรับ root
+    ports:
+      - "8080:80"  # เปิดพอร์ต 8080
+    depends_on:
+      - mysql  # ขึ้นอยู่กับบริการ mysql
+    restart: always  # รีสตาร์ทคอนเทนเนอร์อัตโนมัติเมื่อเกิดข้อผิดพลาด
+
+  # บริการ Prometheus
+  prometheus:
+    image: prom/prometheus:latest  # ใช้ภาพ Prometheus เวอร์ชันล่าสุด
+    container_name: prometheus  # ตั้งชื่อคอนเทนเนอร์เป็น prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml  # ใช้ไฟล์ prometheus.yml จากโฟลเดอร์ปัจจุบัน
+    ports:
+      - "9090:9090"  # เปิดพอร์ต 9090
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"  # ใช้ไฟล์การตั้งค่า prometheus.yml
+    depends_on:
+      - mysqld-exporter  # ขึ้นอยู่กับบริการ mysqld-exporter
+    restart: always  # รีสตาร์ทคอนเทนเนอร์อัตโนมัติเมื่อเกิดข้อผิดพลาด
+
+  # บริการ Grafana
+  grafana:
+    image: grafana/grafana:latest  # ใช้ภาพ Grafana เวอร์ชันล่าสุด
+    container_name: grafana  # ตั้งชื่อคอนเทนเนอร์เป็น grafana
+    ports:
+      - "3000:3000"  # เปิดพอร์ต 3000
+    volumes:
+      - grafana-storage:/var/lib/grafana  # เก็บข้อมูลใน volume ชื่อ grafana-storage
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin  # กำหนดรหัสผ่านผู้ดูแลระบบ
+    depends_on:
+      - prometheus  # ขึ้นอยู่กับบริการ prometheus
+    restart: always  # รีสตาร์ทคอนเทนเนอร์อัตโนมัติเมื่อเกิดข้อผิดพลาด
+
+  # บริการ Flask API
+  flask-api:
+    build: .  # สร้างภาพจาก Dockerfile ในโฟลเดอร์ปัจจุบัน
+    container_name: flask-api  # ตั้งชื่อคอนเทนเนอร์เป็น flask-api
+    environment:
+      - SQLALCHEMY_DATABASE_URI=mysql+pymysql://root:rootpassword@mysql:3306/python_api  # กำหนด URI สำหรับเชื่อมต่อฐานข้อมูล
+    ports:
+      - "5000:5000"  # เปิดพอร์ต 5000
+    depends_on:
+      - mysql  # ขึ้นอยู่กับบริการ mysql
+    restart: always  # รีสตาร์ทคอนเทนเนอร์อัตโนมัติเมื่อเกิดข้อผิดพลาด
+    command: /bin/sh -c "sleep 10 && flask run --host=0.0.0.0"  # หน่วงเวลาการรัน Flask 10 วินาทีเพื่อให้บริการอื่น ๆ พร้อมใช้งาน
+
+# กำหนด volumes ที่ใช้เก็บข้อมูล
+volumes:
+  mysql-data:
+  grafana-storage:

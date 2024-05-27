@@ -1,0 +1,5 @@
+Flask  # ติดตั้ง Flask
+flask_sqlalchemy  # ติดตั้ง Flask SQLAlchemy
+flask_cors  # ติดตั้ง Flask CORS
+pymysql  # ติดตั้ง PyMySQL
+prometheus_client  # ติดตั้ง Prometheus Client
